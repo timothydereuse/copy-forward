@@ -4,7 +4,7 @@ import csv
 import matplotlib.pyplot as plt
 import numpy as np
 
-def parse_PPDD():
+def parse_PPDD(mult=12):
     PPDD = 'PPDD-Jul2018_sym_poly_medium'
 
     i = 0
@@ -21,27 +21,36 @@ def parse_PPDD():
     for i in ids:
         path = f'{PPDD}/cont_true_csv/{i}.csv'
         with open(path) as file:
-            arr = []
+            cont = []
             reader = csv.reader(file, delimiter=',')
             for row in reader:
-                arr.append(np.array(row, dtype='float'))
-            data[i]['cont'] = np.array(arr)
+                cont.append(np.array(row, dtype='float'))
+            cont = np.array(cont)
         path = f'{PPDD}/prime_csv/{i}.csv'
         with open(path) as file:
-            arr = []
+            prime = []
             reader = csv.reader(file, delimiter=',')
             for row in reader:
-                arr.append(np.array(row, dtype='float'))
-            data[i]['prime'] = np.array(arr)
+                prime.append(np.array(row, dtype='float'))
+            prime = np.array(prime)
+
+        prime[:, 0] = np.round(prime[:, 0] * mult)
+        prime[:, 3] = np.round(prime[:, 3] * mult)
+        cont[:, 0] = np.round(cont[:, 0] * mult)
+        cont[:, 3] = np.round(cont[:, 3] * mult)
+
+        data[i]['prime'] = prime.astype('int16')
+        data[i]['cont'] = cont.astype('int16')
+
+    # multiply and round to get integer values for time
     return ids, data
 
-
-def plot_roll(roll, roll2=[]):
+def plot_roll(roll, roll2=[], mult=12):
     x = roll[:, 0]
     y = roll[:, 1]
     c = roll[:, 4].astype('int')
 
-    last = max(roll[:, 0] + roll[:, 3])
+    last = max(roll[:, 0])
 
     colors = np.array(['k', 'b', 'g', 'r', 'c', 'm', 'y'])
 
@@ -51,6 +60,8 @@ def plot_roll(roll, roll2=[]):
         c = np.concatenate((c, roll2[:, 4].astype('int')))
 
     c = c % len(colors)
+    x = x / mult
+    last = last / mult
 
     plt.clf()
     plt.axvline(last)
