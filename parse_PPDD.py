@@ -4,13 +4,17 @@ import csv
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 def parse_PPDD(mult=12):
-    PPDD = 'PPDD-Jul2018_sym_poly_medium'
+    PPDD = 'PPDD'
 
     i = 0
     data = {}
     for root, directories, filenames in os.walk(f'{PPDD}/descriptor'):
         for filename in filenames:
+            ext = filename.split('.')[-1]
+            if not ext == 'json':
+                continue
             path = os.path.join(root, filename)
             with open(path) as json_file:
                 entry = json.load(json_file)
@@ -45,7 +49,15 @@ def parse_PPDD(mult=12):
     # multiply and round to get integer values for time
     return ids, data
 
-def plot_roll(roll, roll2=[], mult=12):
+
+def plot_roll(inp, roll2=None, mult=12):
+
+    if type(inp) == dict:
+        roll = inp['prime']
+        roll2 = inp['cont']
+    else:
+        roll = inp
+
     x = roll[:, 0]
     y = roll[:, 1]
     c = roll[:, 4].astype('int')
@@ -54,7 +66,7 @@ def plot_roll(roll, roll2=[], mult=12):
 
     colors = np.array(['k', 'b', 'g', 'r', 'c', 'm', 'y'])
 
-    if not roll2 is None:
+    if roll2 is not None:
         x = np.concatenate((x, roll2[:, 0]))
         y = np.concatenate((y, roll2[:, 1]))
         c = np.concatenate((c, roll2[:, 4].astype('int')))
@@ -63,7 +75,7 @@ def plot_roll(roll, roll2=[], mult=12):
     x = x / mult
     last = last / mult
 
+    plt.figure(5)
     plt.clf()
     plt.axvline(last)
-    plt.scatter(x,y,c=colors[c])
-    plt.show()
+    plt.scatter(x, y, c=colors[c])
