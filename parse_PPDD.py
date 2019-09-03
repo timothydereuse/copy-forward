@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def parse_PPDD(mult=12):
+def parse_PPDD(limit=1000, mult=12):
     PPDD = 'PPDD'
 
     i = 0
@@ -19,6 +19,9 @@ def parse_PPDD(mult=12):
             with open(path) as json_file:
                 entry = json.load(json_file)
                 data[entry['id']] = entry
+                i += 1
+            if i >= limit:
+                break
 
     ids = list(data.keys())
 
