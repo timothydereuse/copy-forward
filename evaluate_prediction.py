@@ -7,6 +7,7 @@ def evaluate_tec(original, generated):
     given a list of original and generated events, calculate
     precision and recall based on translation equivalence.
     '''
+
     translation_vectors = []
     generated_vec = np.array([(float(s[0]), int(s[1])) for s in generated])
     original_list = [(float(s[0]), int(s[1])) for s in original]
