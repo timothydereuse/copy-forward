@@ -1,8 +1,33 @@
 import os
-import json
 import csv
 import matplotlib.pyplot as plt
 import numpy as np
+
+
+def parse_prime_csvs(in_path, multiplier=12, limit=np.inf):
+    i = 0
+    ids = []
+    data = {}
+    for root, directories, filenames in os.walk(in_path):
+        for filename in filenames:
+            ext = filename.split('.')[-1]
+            if not ext == 'csv':
+                continue
+            path = os.path.join(root, filename)
+            id = filename.split('.')[0]
+            ids.append(id)
+            with open(path) as f:
+                reader = csv.reader(f)
+                entry = []
+                for row in reader:
+                    time = int(float(row[0]) * multiplier)
+                    note = int(row[1])
+                    entry.append([time, note])
+                data[id] = np.array(entry)
+                i += 1
+            if i >= limit:
+                break
+    return ids, data
 
 
 def parse_PPDD(limit=1000, mult=12):
@@ -78,7 +103,6 @@ def plot_roll(inp, roll2=None, mult=12):
     x = x / mult
     last = last / mult
 
-    plt.figure(5)
     plt.clf()
     plt.axvline(last)
     plt.scatter(x, y, c=colors[c])

@@ -3,6 +3,7 @@ import parse_PPDD
 import matplotlib.pyplot as plt
 from importlib import reload
 import evaluate_prediction as ep
+from collections import Counter
 reload(parse_PPDD)
 reload(ep)
 
@@ -10,23 +11,16 @@ multiplier = 12
 cont_length_default = multiplier * 10
 
 
-def point_cloud_to_roll(inp, start_time, lowest=25, height=80, length=80):
-
-    out = np.zeros((length, height), dtype='bool')
-    # add all notes whose times are between start_time and start_time + length
-    for point in inp:
-        time = point[0]
-        note = point[1]
-        if time < start_time or time >= (start_time + length):
-            continue
-        elif note < lowest:
-            out[time - start_time][0] = True
-        elif note >= lowest + height:
-            out[time - start_time][height - 1] = True
-        else:
-            out[time - start_time][note - lowest] = True
-
-    return out
+def get_best_translation(prime_window, fixed_window):
+    translation_vectors = []
+    generated_vec = np.array([(float(s[0]), int(s[1])) for s in fixed_window])
+    prime_list = [(float(s[0]), int(s[1])) for s in prime_window]
+    for i in prime_list:
+        vectors = generated_vec - i
+        translation_vectors += [tuple(v) for v in vectors]
+    grouped_vectors = dict(Counter(translation_vectors))
+    best_vector = max(grouped_vectors, key=lambda x: grouped_vectors[x])
+    return best_vector, grouped_vectors[best_vector]
 
 
 def extract_by_time_range(inp, left, size):
@@ -34,136 +28,56 @@ def extract_by_time_range(inp, left, size):
     return np.copy(inp[inds, :])
 
 
-# given a prime, its continuation, and a translation t in that prime
-# return the last window of the prime and the translated window from the start of the prime
-# AND the naive-matching distance between the continuation and the predicted continuation at that spot.
-def get_training_example(prime, cont, t, prime_bounds, window_size=cont_length_default):
-    right_limit = prime_bounds[1]
-    left_limit = prime_bounds[0]
+def get_all_translations(prime, cont, bounds, window_size=None):
 
-    if t == 'best':
-        t, _ = find_best_possible_translation(prime, cont, prime_bounds, window_size)
+    # if there are no notes in the prime - why bother?
+    if len(prime) == 0:
+        return (0, 0), ((0, 0), (0, 0)), ([], [])
 
-    # if the prime has too few notes in it just extend the left limit of it until it fits
-    max_translate_amt = int(right_limit - left_limit - window_size * 2)
-    if max_translate_amt < window_size:
-        left_limit = right_limit - window_size * 3 # ensures at least @window_size number of possible translations
-        max_translate_amt = window_size
-
-    if t >= max_translate_amt:
-        t = t % max_translate_amt
-
-    base_roll = point_cloud_to_roll(prime, right_limit - window_size)
-    window_slide_roll = point_cloud_to_roll(prime, left_limit + t)
-
-    predict_l = left_limit + t + window_size
-    prediction = extract_by_time_range(prime, predict_l, window_size)
-    prediction[:, 0] = prediction[:, 0] + right_limit - predict_l
-    accuracy = rolls_match(cont, prediction)['F1']
-
-    stack_rolls = np.stack([base_roll, window_slide_roll], axis=2)
-    return stack_rolls, accuracy
-
-
-def find_best_possible_translation(prime, cont, bounds, window_size):
     right_limit = bounds[1]
     left_limit = bounds[0]
-    max_translate_steps = int(right_limit - left_limit - 2 * window_size)
-    translate_amts = np.arange(0, max_translate_steps, 1)
-
-    best_translation = -1
-    best_acc = 0
-
-    for t in translate_amts:
-        predict_l = left_limit + t + window_size
-        prediction = extract_by_time_range(prime, predict_l, window_size)
-
-        # translate to start of true continuation
-        prediction[:, 0] = prediction[:, 0] + right_limit - predict_l
-        accuracy = rolls_match(cont, prediction)['F1']
-
-        if accuracy > best_acc:
-            best_acc = accuracy
-            best_translation = t
-
-    return best_translation, best_acc
-
-
-def get_all_translations(prime, cont, bounds=None, window_size=None):
-
-    # get time-bounds of the prime
-    if not bounds:
-        right_limit = max(prime[:, 0])
-        left_limit = min(prime[:, 0])
-    else:
-        right_limit = bounds[1]
-        left_limit = bounds[0]
 
     cont_length = cont_length_default
+
+    # if the prime spans less time than the desired continuation then just repeat the prime backwards
+    if right_limit - left_limit < cont_length:
+        factor = int(np.ceil(cont_length / (right_limit - left_limit)))
+        old_prime = np.copy(prime)
+        for i in range(1, factor + 1):
+            translate_prime = np.copy(old_prime)
+            translate_prime[:, 0] -= (right_limit - left_limit) * i
+            prime = np.concatenate([translate_prime, prime])
+
     if not window_size:
-        window_size = cont_length
+        window_size = min(cont_length // 2, (right_limit - left_limit) // 2)
 
-    # if the prime has too few notes in it just extend the left limit of it until it fits
-    max_translate_amt = int(right_limit - left_limit - window_size - cont_length)
-    if max_translate_amt < window_size:
-        left_limit = right_limit - window_size * 2 - cont_length
-        max_translate_amt = window_size
+    fixed_window = prime[right_limit - window_size <= prime[:, 0]]
+    prime_window = prime[prime[:, 0] < right_limit - window_size]
 
-    hop_translate = 1
-    min_translate = 0
-    translate_amts = np.arange(min_translate, max_translate_amt, hop_translate)
+    # if the fixed window has no notes in it - there's nothing to go on. assume that the continuation is also empty
+    if len(fixed_window) == 0 or len(prime_window) == 0:
+        best_trans_vector = (0, 0)
+        predicted_cont = []
+    else:
+        best_trans_vector, best_amt = get_best_translation(prime_window, fixed_window)
+        translated_prime = prime + best_trans_vector
+        predicted_cont = extract_by_time_range(translated_prime, right_limit, cont_length)
 
-    window_base = prime[right_limit - window_size < prime[:, 0]]
-    scores = {'rec': [], 'prec': [], 'F1': []}
-    accuracies = {'rec': [], 'prec': [], 'F1': []}
+    # if the continuation has no notes in it BUT the fixed window does: well, we're gonna be 100% wrong no matter what
+    if len(cont) == 0:
+        predicted_score = 0
+        ideal_score = 0
+        ideal_trans_vector = 0
+        ideal_cont = []
+    else:
+        ideal_trans_vector, ideal_amt = get_best_translation(prime, cont)
+        ideal_translated_prime = prime + ideal_trans_vector
+        ideal_cont = extract_by_time_range(ideal_translated_prime, right_limit, cont_length)
 
-    best_prediction = np.array([])
-    best_possible = np.array([])
-    best_acc = 0
-    best_score = 0
+        predicted_score = rolls_match(cont, predicted_cont)['F1']
+        ideal_score = rolls_match(cont, ideal_cont)['F1']
 
-    for t in translate_amts:
-
-        window_slide = extract_by_time_range(prime, left_limit + t, window_size)
-
-        # distance from start of sliding window to start of fixed window
-        window_start_diff = (right_limit - window_size) - (t + left_limit)
-        window_slide[:, 0] = window_slide[:, 0] + window_start_diff
-
-        autocorrelation = rolls_match(window_base, window_slide)
-        # autocorrelation = ep.evaluate_tec(window_base, window_slide)
-        for key in autocorrelation:
-            scores[key].append(autocorrelation[key])
-
-        predict_l = left_limit + t + window_size
-        prediction = extract_by_time_range(prime, predict_l, cont_length)
-
-        # translate to start of true continuation
-        prediction[:, 0] = prediction[:, 0] + right_limit - predict_l
-
-        if len(cont) == 0 and len(prediction) == 0:
-            accuracy = {'rec': 1, 'prec': 1, 'F1': 1}
-        elif len(cont) == 0 or len(prediction) == 0:
-            accuracy = {'rec': 0, 'prec': 0, 'F1': 0}
-        else:
-            try:
-                accuracy = rolls_match(cont, prediction)
-                # print(f'translation {t} stats: {accuracy}')
-            except ZeroDivisionError:
-                accuracy = {'rec': 0, 'prec': 0, 'F1': 0}
-                # print(f'zero division on translation {t}')
-        for key in accuracy:
-            accuracies[key].append(accuracy[key])
-
-        if accuracy['F1'] > best_acc:
-            best_acc = accuracy['F1']
-            best_possible = prediction
-
-        if autocorrelation['F1'] > best_score:
-            best_score = autocorrelation['F1']
-            best_prediction = prediction
-
-    return scores, accuracies, best_prediction, best_possible
+    return (predicted_score, ideal_score), (best_trans_vector, ideal_trans_vector), (predicted_cont, ideal_cont)
 
 
 def rolls_match(orig, pred):
@@ -209,13 +123,15 @@ if __name__ == '__main__':
     # 3: duration in beats
     # 4: channel
     print('parsing PPDD...')
-    ids, data = parse_PPDD.parse_PPDD(limit=9000, mult=multiplier)
+    ids, data = parse_PPDD.parse_PPDD(limit=3000, mult=multiplier)
 
     pred_accs = []
-    best_accs = []
+    ideal_accs = []
+    m_pred_accs = []
+    m_ideal_accs = []
 
     print('translating...')
-    for idx in range(0, 20):
+    for idx in range(2000, 3000):
         # get as triples of (onset time, pitch, channel)
         i = ids[idx]
         prime = data[i]['prime'][:, [0, 1, 4]]
@@ -223,59 +139,73 @@ if __name__ == '__main__':
 
         bounds = (min(prime[:, 0]), max(prime[:, 0]))
 
-        prime[:, 2] = 0
-        channel_nums = set(prime[:, 2])
-        best_predictions = []
-        best_possibles = []
+        # prime[:, 2] = 0
+        # cont[:, 2] = 0
+        channel_nums = list(set(prime[:, 2]))
 
+        channel_lengths = [len(prime[prime[:,2] == x, :2]) for x in channel_nums]
+        merge_channels = [channel_nums[i] for i, x in enumerate(channel_lengths) if x < np.mean(channel_lengths)]
+
+        if len(merge_channels) > 1:
+            for c in merge_channels:
+                prime[prime[:, 2] == c, 2] = -1
+            channel_nums = list(set(prime[:, 2]))
+
+        best_predictions = []
+        ideal_predictions = []
+
+        pred_scores = []
         for channel in channel_nums:
             channel_prime = prime[prime[:, 2] == channel, :2]
             channel_cont = cont[cont[:, 2] == channel, :2]
 
-            scores, acc, best_prediction, best_possible = \
-                get_all_translations(channel_prime, channel_cont, bounds=bounds, window_size=multiplier * 5)
-            best_predictions.append(best_prediction)
-            best_possibles.append(best_possible)
-            try:
-                best_trans_predicted = np.argmax(scores['F1'])
-                best_trans_actual = np.argmax(acc['F1'])
-                best_possible = np.round(max(scores['F1']), 3)
-                # print(f'c {channel}, pred. translation = {best_trans_predicted}, best translation = {best_trans_actual} '
-                #       f'best possible = {best_possible}')
-            except ValueError:
-                pass
+            scores, vectors, continuations = \
+                get_all_translations(channel_prime, channel_cont, bounds=bounds, window_size=cont_length_default // 2)
+            best_predictions.extend(continuations[0])
+            ideal_predictions.extend(continuations[1])
+            # print(f'c {channel}, pred. trans = {vectors[0]}, ideal trans = {vectors[1]} '
+            #       f'pred score = {scores[0]:.3f}')
+            pred_scores.append(scores[0] * len(channel_prime))
 
-        try:
-            mixed_prediction = np.concatenate([x for x in best_predictions if x.size > 0])
-            mixed_prediction = sorted(mixed_prediction, key=lambda x: x[0])
-            mixed_prediction = np.unique([tuple(x) for x in mixed_prediction], axis=0)
-        except ValueError:
-            mixed_prediction = np.ones((2, 2))
+        pred_avg_score = np.mean(pred_scores) / len(prime)
+        m_scores, m_vectors, m_continuations = \
+            get_all_translations(prime[:, :2], cont[:, :2], bounds=bounds, window_size=cont_length_default // 2)
 
-        try:
-            mixed_bests = np.concatenate([x for x in best_possibles if x.size > 0])
-            mixed_bests = sorted(mixed_bests, key=lambda x: x[0])
-            mixed_bests = np.unique([tuple(x) for x in mixed_bests], axis=0)
-        except ValueError:
-            mixed_bests = np.ones((2, 2))
+        best_predictions = sorted(best_predictions, key=lambda x: x[0])
+        best_predictions = np.unique([tuple(x) for x in best_predictions], axis=0)
+
+        ideal_predictions = sorted(ideal_predictions, key=lambda x: x[0])
+        ideal_predictions = np.unique([tuple(x) for x in ideal_predictions], axis=0)
+
+        m_best_predictions = np.unique([tuple(x) for x in m_continuations[0]], axis=0)
+        m_ideal_predictions = np.unique([tuple(x) for x in m_continuations[1]], axis=0)
 
         mixed_true = cont[:, :2]
         mixed_true = np.unique([tuple(x) for x in mixed_true], axis=0)
-        res_pred = ep.evaluate_tec(mixed_true, mixed_prediction)['F1']
-        res_best = ep.evaluate_tec(mixed_true, mixed_bests)['F1']
-        print(f'prediction: {res_pred:.3f}. dist from best possible: {(res_best - res_pred):3f}, mean: {np.mean(pred_accs):.3f}')
+        res_pred = ep.evaluate_tec(mixed_true, best_predictions)['F1']
+        res_ideal = ep.evaluate_tec(mixed_true, ideal_predictions)['F1']
+
+        m_res_pred = ep.evaluate_tec(mixed_true, m_best_predictions)['F1']
+        m_res_ideal = ep.evaluate_tec(mixed_true, m_ideal_predictions)['F1']
 
         pred_accs.append(res_pred)
-        best_accs.append(res_best)
+        ideal_accs.append(res_ideal)
+        m_pred_accs.append(m_res_pred)
+        m_ideal_accs.append(m_res_ideal)
 
+        better = ((res_pred < m_res_pred) == (pred_avg_score < m_scores[0])) or (res_pred == m_res_pred)
 
-    # plt.clf()
-    # print('plotting...')
-    # parse_PPDD.plot_roll(data[i])
-    # plt.figure(2)
-    # plt.scatter([x[0] for x in mixed_true], [x[1] for x in mixed_true], facecolors='none', edgecolors='k', s=80)
-    # plt.scatter([x[0] for x in mixed_bests], [x[1] for x in mixed_bests], marker='s')
-    # plt.scatter([x[0] for x in mixed_prediction], [x[1] for x in mixed_prediction], marker='o', s=20)
-    # # plt.plot(acc['F1'])
-    # plt.legend(['autocorrelation', 'accuracy'])
-    # plt.show()
+        print(
+            f'pred: {res_pred:.3f}. m_pred: {m_res_pred:.3f}, diff: {res_pred - m_res_pred:.3f} scorediff: {pred_avg_score - m_scores[0]:.3f} better: {better}'
+        )
+
+    plt.clf()
+    print('plotting...')
+    parse_PPDD.plot_roll(data[i])
+    plt.figure(2)
+    plt.scatter([x[0] for x in mixed_true], [x[1] for x in mixed_true], facecolors='none', edgecolors='k', s=80)
+    plt.scatter([x[0] for x in ideal_predictions], [x[1] for x in ideal_predictions], marker='o')
+    plt.scatter([x[0] for x in best_predictions], [x[1] for x in best_predictions], marker='s', s=30)
+    # plt.plot(acc['F1'])
+    plt.legend(['truth', 'ideal', 'predicted'])
+    plt.show()

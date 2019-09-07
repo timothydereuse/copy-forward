@@ -1,4 +1,5 @@
 lpd_5/*
+out_csv/*
 PPDD*/
 
 # Byte-compiled / optimized / DLL files
@@ -105,3 +106,4 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+/out_csv/
