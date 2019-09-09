@@ -1,10 +1,10 @@
 import os
 import csv
-import matplotlib.pyplot as plt
 import numpy as np
 import json
 
 default_multiplier = 12
+
 
 def parse_prime_csvs(in_path, multiplier=default_multiplier, limit=np.inf):
 
@@ -90,33 +90,3 @@ def write_to_csv(prediction, path, multiplier=default_multiplier, round_to=5):
             time = np.round(pt[0] / float(multiplier), round_to)
             note = int(pt[1])
             w.writerow([time, note])
-
-
-def plot_roll(inp, roll2=None, mult=12):
-
-    if type(inp) == dict:
-        roll = inp['prime']
-        roll2 = inp['cont']
-    else:
-        roll = inp
-
-    x = roll[:, 0]
-    y = roll[:, 1]
-    c = roll[:, 4].astype('int')
-
-    last = max(roll[:, 0])
-
-    colors = np.array(['k', 'b', 'g', 'r', 'c', 'm', 'y'])
-
-    if roll2 is not None:
-        x = np.concatenate((x, roll2[:, 0]))
-        y = np.concatenate((y, roll2[:, 1]))
-        c = np.concatenate((c, roll2[:, 4].astype('int')))
-
-    c = c % len(colors)
-    x = x / mult
-    last = last / mult
-
-    plt.clf()
-    plt.axvline(last)
-    plt.scatter(x, y, c=colors[c])

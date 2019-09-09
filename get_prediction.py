@@ -4,7 +4,6 @@ from importlib import reload
 import os
 import csv
 from collections import Counter
-reload(pc)
 
 multiplier = 12
 cont_length_default = multiplier * 10

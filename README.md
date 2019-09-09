@@ -1,7 +1,9 @@
 # CopyForward
 
 A MIREX project for the 2019 Patterns for Prediction task:
+
 `https://www.music-ir.org/mirex/wiki/2019:Patterns_for_Prediction`
+
 by Timothy de Reuse.
 
 Input Representations: symbolic, monophonic & symbolic, polyphonic
