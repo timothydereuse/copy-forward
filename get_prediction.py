@@ -10,15 +10,14 @@ multiplier = 12
 cont_length_default = multiplier * 10
 window_size_default = multiplier * 8
 
+
 def get_best_translation(prime_window, fixed_window):
-    '''
-    based off of the evaluate_tec method: returns the translation vector that
-    yields the highest tec score.
-    '''
+    # returns the translation vector that produces the most overlap between
+    # the two windows. based on the evaluate_tec method from
+    # github.com/BeritJanssen/PatternsForPrediction.
     translation_vectors = []
-    generated_vec = np.array([(float(s[0]), int(s[1])) for s in fixed_window])
-    prime_list = [(float(s[0]), int(s[1])) for s in prime_window]
-    for i in prime_list:
+    generated_vec = np.array(fixed_window)
+    for i in prime_window:
         vectors = generated_vec - i
         translation_vectors += [tuple(v) for v in vectors]
     grouped_vectors = dict(Counter(translation_vectors))
@@ -38,8 +37,8 @@ def get_prediction(prime, bounds=None, window_size=window_size_default):
         return (0, 0), ((0, 0), (0, 0)), ([], [])
 
     if not bounds:
-        left_limit = min(prime[:, 0])
-        right_limit = max(prime[:, 0])
+        left_limit = min(prime[:, 1])
+        right_limit = max(prime[:, 1])
     else:
         right_limit = bounds[1]
         left_limit = bounds[0]
@@ -72,16 +71,27 @@ def get_prediction(prime, bounds=None, window_size=window_size_default):
         translated_prime = prime + best_trans_vector
         predicted_cont = extract_by_time_range(translated_prime, right_limit, cont_length)
 
+    # ugly, but better this than the evaluation metric breaking on particularly
+    # ill-formed primes. just fill with a chromatic scale if all else fails
+    if len(predicted_cont) < 2:
+        dummy = [[x, x] for x in np.arange(0, 10, 1)]
+        predicted_cont = np.concatenate([predicted_cont, dummy])
+
     return predicted_cont
 
 
 if __name__ == '__main__':
-    ids, data = pc.parse_prime_csvs('./PPDD/cont_true_csv', multiplier=multiplier, limit=100)
+    print('parsing csvs...')
+    ids, data = pc.parse_prime_csvs('./PPDD/prime_csv', multiplier=multiplier, limit=10000)
     out_path = './out_csv/'
 
     for idx in range(len(ids)):
+
+        if not(idx % 50):
+            print(f'processing file {idx} of {len(ids)}...')
+
         i = ids[idx]
         prime = data[i][:, :2]
-        prediction = get_prediction(prime, bounds=None, window_size=cont_length_default // 2)
+        prediction = get_prediction(prime, bounds=None, window_size=window_size_default)
         out_fname = os.path.join(out_path, f'{i}.csv')
         pc.write_to_csv(prediction, out_fname, multiplier=multiplier)

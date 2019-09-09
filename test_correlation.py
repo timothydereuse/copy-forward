@@ -12,10 +12,11 @@ cont_length_default = multiplier * 10
 window_size_default = multiplier * 8
 
 def get_best_translation(prime_window, fixed_window):
+    # based on the evaluate_tec method from
+    # github.com/BeritJanssen/PatternsForPrediction.
     translation_vectors = []
-    generated_vec = np.array([(float(s[0]), int(s[1])) for s in fixed_window])
-    prime_list = [(float(s[0]), int(s[1])) for s in prime_window]
-    for i in prime_list:
+    generated_vec = np.array(fixed_window)
+    for i in prime_window:
         vectors = generated_vec - i
         translation_vectors += [tuple(v) for v in vectors]
     grouped_vectors = dict(Counter(translation_vectors))
@@ -123,7 +124,7 @@ if __name__ == '__main__':
     # 3: duration in beats
     # 4: channel
     print('parsing PPDD...')
-    ids, data = pc.parse_PPDD(PPDD='./PPDD', limit=500, mult=multiplier)
+    ids, data = pc.parse_PPDD(PPDD='./PPDD', limit=10000, mult=multiplier)
 
     pred_accs = []
     ideal_accs = []
@@ -131,7 +132,12 @@ if __name__ == '__main__':
     m_ideal_accs = []
 
     print('translating...')
-    for idx in range(0, 500):
+    indices_choose = np.random.choice(10000, 1000)
+    for n, idx in enumerate(indices_choose):
+
+        if not n % 50:
+            print(f'processing entry {n} of {len(indices_choose)}...')
+
         # get as triples of (onset time, pitch, channel)
         i = ids[idx]
         prime = data[i]['prime'][:, [0, 1, 4]]
@@ -143,41 +149,41 @@ if __name__ == '__main__':
         # cont[:, 2] = 0
         channel_nums = list(set(prime[:, 2]))
 
-        channel_lengths = [len(prime[prime[:,2] == x, :2]) for x in channel_nums]
-        merge_channels = [channel_nums[i] for i, x in enumerate(channel_lengths) if x < np.mean(channel_lengths)]
+        # channel_lengths = [len(prime[prime[:,2] == x, :2]) for x in channel_nums]
+        # merge_channels = [channel_nums[i] for i, x in enumerate(channel_lengths) if x < np.mean(channel_lengths)]
+        #
+        # if len(merge_channels) > 1:
+        #     for c in merge_channels:
+        #         prime[prime[:, 2] == c, 2] = -1
+        #     channel_nums = list(set(prime[:, 2]))
 
-        if len(merge_channels) > 1:
-            for c in merge_channels:
-                prime[prime[:, 2] == c, 2] = -1
-            channel_nums = list(set(prime[:, 2]))
+        # best_predictions = []
+        # ideal_predictions = []
+        #
+        # pred_scores = []
+        # for channel in channel_nums:
+        #     channel_prime = prime[prime[:, 2] == channel, :2]
+        #     channel_cont = cont[cont[:, 2] == channel, :2]
+        #
+        #     scores, vectors, continuations = \
+        #         get_all_translations(channel_prime, channel_cont, bounds=bounds, window_size=window_size_default // 2)
+        #     best_predictions.extend(continuations[0])
+        #     ideal_predictions.extend(continuations[1])
+        #     # print(f'c {channel}, pred. trans = {vectors[0]}, ideal trans = {vectors[1]} '
+        #     #       f'pred score = {scores[0]:.3f}')
+        #     pred_scores.append(scores[0] * len(channel_prime))
 
-        best_predictions = []
-        ideal_predictions = []
-
-        pred_scores = []
-        for channel in channel_nums:
-            channel_prime = prime[prime[:, 2] == channel, :2]
-            channel_cont = cont[cont[:, 2] == channel, :2]
-
-            scores, vectors, continuations = \
-                get_all_translations(channel_prime, channel_cont, bounds=bounds, window_size=window_size_default // 2)
-            best_predictions.extend(continuations[0])
-            ideal_predictions.extend(continuations[1])
-            # print(f'c {channel}, pred. trans = {vectors[0]}, ideal trans = {vectors[1]} '
-            #       f'pred score = {scores[0]:.3f}')
-            pred_scores.append(scores[0] * len(channel_prime))
-
-        pred_avg_score = np.mean(pred_scores) / len(prime)
+        # pred_avg_score = np.mean(pred_scores) / len(prime)
         m_scores, m_vectors, m_continuations = \
             get_all_translations(prime[:, :2], cont[:, :2], bounds=bounds, window_size=window_size_default // 2)
 
-        best_predictions = sorted(best_predictions, key=lambda x: x[0])
-        if len(best_predictions) > 0:
-            best_predictions = np.unique([tuple(x) for x in best_predictions], axis=0)
-
-        ideal_predictions = sorted(ideal_predictions, key=lambda x: x[0])
-        if len(ideal_predictions) > 0:
-            ideal_predictions = np.unique([tuple(x) for x in ideal_predictions], axis=0)
+        # best_predictions = sorted(best_predictions, key=lambda x: x[0])
+        # if len(best_predictions) > 0:
+        #     best_predictions = np.unique([tuple(x) for x in best_predictions], axis=0)
+        #
+        # ideal_predictions = sorted(ideal_predictions, key=lambda x: x[0])
+        # if len(ideal_predictions) > 0:
+        #     ideal_predictions = np.unique([tuple(x) for x in ideal_predictions], axis=0)
 
         if len(m_continuations[0]) > 0:
             m_best_predictions = np.unique([tuple(x) for x in m_continuations[0]], axis=0)
@@ -188,33 +194,54 @@ if __name__ == '__main__':
         mixed_true = cont[:, :2]
         mixed_true = np.unique([tuple(x) for x in mixed_true], axis=0)
 
-        try:
-            res_pred = ep.evaluate_tec(mixed_true, best_predictions)['F1']
-            res_ideal = ep.evaluate_tec(mixed_true, ideal_predictions)['F1']
-            m_res_pred = ep.evaluate_tec(mixed_true, m_best_predictions)['F1']
-            m_res_ideal = ep.evaluate_tec(mixed_true, m_ideal_predictions)['F1']
+        if len(m_best_predictions) == 1:
+            m_best_predictions = np.concatenate([m_best_predictions, [[0, 0]]])
+        if len(m_ideal_predictions) == 1:
+            m_ideal_predictions = np.concatenate([m_ideal_predictions, [[0, 0]]])
 
-            pred_accs.append(res_pred)
-            ideal_accs.append(res_ideal)
+        try:
+            # res_pred = ep.evaluate_tec(mixed_true, best_predictions)['F1']
+            # res_ideal = ep.evaluate_tec(mixed_true, ideal_predictions)['F1']
+            m_res_pred = ep.evaluate_tec(mixed_true, m_best_predictions)
+            m_res_ideal = ep.evaluate_tec(mixed_true, m_ideal_predictions)
+
+            # pred_accs.append(res_pred)
+            # ideal_accs.append(res_ideal)
             m_pred_accs.append(m_res_pred)
             m_ideal_accs.append(m_res_ideal)
         except ValueError:
             print('empty prediction - continuing')
             continue
 
-        better = ((res_pred < m_res_pred) == (pred_avg_score < m_scores[0])) or (res_pred == m_res_pred)
+        # better = ((res_pred < m_res_pred) == (pred_avg_score < m_scores[0])) or (res_pred == m_res_pred)
 
-        print(
-            f'pred: {res_pred:.3f}. m_pred: {m_res_pred:.3f}, diff: {res_pred - m_res_pred:.3f} scorediff: {pred_avg_score - m_scores[0]:.3f} better: {better}'
-        )
+        # print(
+        #     f'pred: {res_pred:.3f}. m_pred: {m_res_pred:.3f}, diff: {res_pred - m_res_pred:.3f} scorediff: {pred_avg_score - m_scores[0]:.3f} better: {better}'
+        # )
+
+        # print(
+        #     f'm_pred: {m_res_pred}'
+        # )
+
+    mean_res_pred = {}
+    mean_res_ideal = {}
+    for k in m_pred_accs[0].keys():
+        mean_res_pred[k] = np.mean([x[k] for x in m_pred_accs])
+        mean_res_ideal[k] = np.mean([x[k] for x in m_ideal_accs])
+
+    print(mean_res_pred)
+    print(mean_res_ideal)
+
+    # print(f'mean: {np.mean(m_pred_accs):4f}, std_err: {np.std(m_pred_accs) / np.sqrt(len(m_pred_accs)):4f}')
+    # print(f'ideal_mean: {np.mean(m_ideal_accs):4f}, ideal_std_err: {np.std(m_ideal_accs) / np.sqrt(len(m_ideal_accs)):4f}')
 
     plt.clf()
     print('plotting...')
     pc.plot_roll(data[i])
     plt.figure(2)
     plt.scatter([x[0] for x in mixed_true], [x[1] for x in mixed_true], facecolors='none', edgecolors='k', s=80)
-    plt.scatter([x[0] for x in ideal_predictions], [x[1] for x in ideal_predictions], marker='o')
-    plt.scatter([x[0] for x in best_predictions], [x[1] for x in best_predictions], marker='s', s=30)
+    plt.scatter([x[0] for x in m_ideal_predictions], [x[1] for x in m_ideal_predictions], marker='o')
+    plt.scatter([x[0] for x in m_best_predictions], [x[1] for x in m_best_predictions], marker='s', s=30)
     # plt.plot(acc['F1'])
     plt.legend(['truth', 'ideal', 'predicted'])
     plt.show()
