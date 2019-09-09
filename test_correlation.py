@@ -1,15 +1,15 @@
 import numpy as np
-import parse_PPDD
+import parse_csvs as pc
 import matplotlib.pyplot as plt
 from importlib import reload
 import evaluate_prediction as ep
 from collections import Counter
-reload(parse_PPDD)
+reload(pc)
 reload(ep)
 
 multiplier = 12
 cont_length_default = multiplier * 10
-
+window_size_default = multiplier * 8
 
 def get_best_translation(prime_window, fixed_window):
     translation_vectors = []
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     # 3: duration in beats
     # 4: channel
     print('parsing PPDD...')
-    ids, data = parse_PPDD.parse_PPDD(limit=3000, mult=multiplier)
+    ids, data = pc.parse_PPDD(PPDD='./PPDD', limit=500, mult=multiplier)
 
     pred_accs = []
     ideal_accs = []
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     m_ideal_accs = []
 
     print('translating...')
-    for idx in range(2000, 3000):
+    for idx in range(0, 500):
         # get as triples of (onset time, pitch, channel)
         i = ids[idx]
         prime = data[i]['prime'][:, [0, 1, 4]]
@@ -160,7 +160,7 @@ if __name__ == '__main__':
             channel_cont = cont[cont[:, 2] == channel, :2]
 
             scores, vectors, continuations = \
-                get_all_translations(channel_prime, channel_cont, bounds=bounds, window_size=cont_length_default // 2)
+                get_all_translations(channel_prime, channel_cont, bounds=bounds, window_size=window_size_default // 2)
             best_predictions.extend(continuations[0])
             ideal_predictions.extend(continuations[1])
             # print(f'c {channel}, pred. trans = {vectors[0]}, ideal trans = {vectors[1]} '
@@ -169,29 +169,38 @@ if __name__ == '__main__':
 
         pred_avg_score = np.mean(pred_scores) / len(prime)
         m_scores, m_vectors, m_continuations = \
-            get_all_translations(prime[:, :2], cont[:, :2], bounds=bounds, window_size=cont_length_default // 2)
+            get_all_translations(prime[:, :2], cont[:, :2], bounds=bounds, window_size=window_size_default // 2)
 
         best_predictions = sorted(best_predictions, key=lambda x: x[0])
-        best_predictions = np.unique([tuple(x) for x in best_predictions], axis=0)
+        if len(best_predictions) > 0:
+            best_predictions = np.unique([tuple(x) for x in best_predictions], axis=0)
 
         ideal_predictions = sorted(ideal_predictions, key=lambda x: x[0])
-        ideal_predictions = np.unique([tuple(x) for x in ideal_predictions], axis=0)
+        if len(ideal_predictions) > 0:
+            ideal_predictions = np.unique([tuple(x) for x in ideal_predictions], axis=0)
 
-        m_best_predictions = np.unique([tuple(x) for x in m_continuations[0]], axis=0)
-        m_ideal_predictions = np.unique([tuple(x) for x in m_continuations[1]], axis=0)
+        if len(m_continuations[0]) > 0:
+            m_best_predictions = np.unique([tuple(x) for x in m_continuations[0]], axis=0)
+
+        if len(m_continuations[1]) > 0:
+            m_ideal_predictions = np.unique([tuple(x) for x in m_continuations[1]], axis=0)
 
         mixed_true = cont[:, :2]
         mixed_true = np.unique([tuple(x) for x in mixed_true], axis=0)
-        res_pred = ep.evaluate_tec(mixed_true, best_predictions)['F1']
-        res_ideal = ep.evaluate_tec(mixed_true, ideal_predictions)['F1']
 
-        m_res_pred = ep.evaluate_tec(mixed_true, m_best_predictions)['F1']
-        m_res_ideal = ep.evaluate_tec(mixed_true, m_ideal_predictions)['F1']
+        try:
+            res_pred = ep.evaluate_tec(mixed_true, best_predictions)['F1']
+            res_ideal = ep.evaluate_tec(mixed_true, ideal_predictions)['F1']
+            m_res_pred = ep.evaluate_tec(mixed_true, m_best_predictions)['F1']
+            m_res_ideal = ep.evaluate_tec(mixed_true, m_ideal_predictions)['F1']
 
-        pred_accs.append(res_pred)
-        ideal_accs.append(res_ideal)
-        m_pred_accs.append(m_res_pred)
-        m_ideal_accs.append(m_res_ideal)
+            pred_accs.append(res_pred)
+            ideal_accs.append(res_ideal)
+            m_pred_accs.append(m_res_pred)
+            m_ideal_accs.append(m_res_ideal)
+        except ValueError:
+            print('empty prediction - continuing')
+            continue
 
         better = ((res_pred < m_res_pred) == (pred_avg_score < m_scores[0])) or (res_pred == m_res_pred)
 
@@ -201,7 +210,7 @@ if __name__ == '__main__':
 
     plt.clf()
     print('plotting...')
-    parse_PPDD.plot_roll(data[i])
+    pc.plot_roll(data[i])
     plt.figure(2)
     plt.scatter([x[0] for x in mixed_true], [x[1] for x in mixed_true], facecolors='none', edgecolors='k', s=80)
     plt.scatter([x[0] for x in ideal_predictions], [x[1] for x in ideal_predictions], marker='o')

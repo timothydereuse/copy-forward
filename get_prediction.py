@@ -1,19 +1,20 @@
 import numpy as np
-import parse_PPDD
-import matplotlib.pyplot as plt
+import parse_csvs as pc
 from importlib import reload
 import os
 import csv
-import evaluate_prediction as ep
 from collections import Counter
-reload(parse_PPDD)
-reload(ep)
+reload(pc)
 
 multiplier = 12
 cont_length_default = multiplier * 10
-
+window_size_default = multiplier * 8
 
 def get_best_translation(prime_window, fixed_window):
+    '''
+    based off of the evaluate_tec method: returns the translation vector that
+    yields the highest tec score.
+    '''
     translation_vectors = []
     generated_vec = np.array([(float(s[0]), int(s[1])) for s in fixed_window])
     prime_list = [(float(s[0]), int(s[1])) for s in prime_window]
@@ -30,7 +31,7 @@ def extract_by_time_range(inp, left, size):
     return np.copy(inp[inds, :])
 
 
-def get_prediction(prime, bounds=None, window_size=None):
+def get_prediction(prime, bounds=None, window_size=window_size_default):
 
     # if there are no notes in the prime - why bother?
     if len(prime) == 0:
@@ -45,7 +46,8 @@ def get_prediction(prime, bounds=None, window_size=None):
 
     cont_length = cont_length_default
 
-    # if the prime spans less time than the desired continuation then repeat the prime backwards
+    # if the prime spans less time than the desired continuation then repeat
+    # the prime backwards; uncommon, but possible in PPDD
     if right_limit - left_limit < cont_length:
         factor = int(np.ceil(cont_length / (right_limit - left_limit)))
         old_prime = np.copy(prime)
@@ -59,10 +61,9 @@ def get_prediction(prime, bounds=None, window_size=None):
 
     fixed_window = extract_by_time_range(prime, right_limit - window_size, window_size)
     prime_window = extract_by_time_range(prime, 0, right_limit - window_size)
-    # fixed_window = prime[right_limit - window_size <= prime[:, 0]]
-    # prime_window = prime[prime[:, 0] < right_limit - window_size]
 
-    # if the fixed window has no notes in it - there's nothing to go on. assume that the continuation is also empty
+    # if the fixed window has no notes in it - there's nothing to go on.
+    # assume that the continuation is also empty
     if len(fixed_window) == 0 or len(prime_window) == 0:
         best_trans_vector = (0, 0)
         predicted_cont = []
@@ -74,23 +75,13 @@ def get_prediction(prime, bounds=None, window_size=None):
     return predicted_cont
 
 
-def write_to_csv(prediction, path, multiplier, round_to=5):
-    with open(path, 'w') as f:
-        w = csv.writer(f)
-        for pt in prediction:
-            time = np.round(pt[0] / float(multiplier), round_to)
-            note = int(pt[1])
-            w.writerow([time, note])
-
-
 if __name__ == '__main__':
-    ids, data = parse_PPDD.parse_prime_csvs('./PPDD/cont_true_csv', multiplier=multiplier, limit=100)
+    ids, data = pc.parse_prime_csvs('./PPDD/cont_true_csv', multiplier=multiplier, limit=100)
     out_path = './out_csv/'
 
-    print('translating...')
     for idx in range(len(ids)):
         i = ids[idx]
         prime = data[i][:, :2]
         prediction = get_prediction(prime, bounds=None, window_size=cont_length_default // 2)
         out_fname = os.path.join(out_path, f'{i}.csv')
-        write_to_csv(prediction, out_fname, multiplier=multiplier)
+        pc.write_to_csv(prediction, out_fname, multiplier=multiplier)

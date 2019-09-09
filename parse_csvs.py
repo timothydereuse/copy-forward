@@ -2,9 +2,15 @@ import os
 import csv
 import matplotlib.pyplot as plt
 import numpy as np
+import json
 
+default_multiplier = 12
 
-def parse_prime_csvs(in_path, multiplier=12, limit=np.inf):
+def parse_prime_csvs(in_path, multiplier=default_multiplier, limit=np.inf):
+
+    if limit < 0:
+        limit = np.inf
+
     i = 0
     ids = []
     data = {}
@@ -30,8 +36,7 @@ def parse_prime_csvs(in_path, multiplier=12, limit=np.inf):
     return ids, data
 
 
-def parse_PPDD(limit=1000, mult=12):
-    PPDD = 'PPDD'
+def parse_PPDD(PPDD='PPDD', limit=1000, mult=default_multiplier):
 
     i = 0
     data = {}
@@ -76,6 +81,15 @@ def parse_PPDD(limit=1000, mult=12):
 
     # multiply and round to get integer values for time
     return ids, data
+
+
+def write_to_csv(prediction, path, multiplier=default_multiplier, round_to=5):
+    with open(path, 'w', newline='') as f:
+        w = csv.writer(f)
+        for pt in prediction:
+            time = np.round(pt[0] / float(multiplier), round_to)
+            note = int(pt[1])
+            w.writerow([time, note])
 
 
 def plot_roll(inp, roll2=None, mult=12):
