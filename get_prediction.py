@@ -37,8 +37,8 @@ def get_prediction(prime, bounds=None, window_size=window_size_default):
         return (0, 0), ((0, 0), (0, 0)), ([], [])
 
     if not bounds:
-        left_limit = min(prime[:, 1])
-        right_limit = max(prime[:, 1])
+        left_limit = min(prime[:, 0])
+        right_limit = max(prime[:, 0])
     else:
         right_limit = bounds[1]
         left_limit = bounds[0]
@@ -82,7 +82,7 @@ def get_prediction(prime, bounds=None, window_size=window_size_default):
 
 if __name__ == '__main__':
     print('parsing csvs...')
-    ids, data = pc.parse_prime_csvs('./PPDD/prime_csv', multiplier=multiplier, limit=10000)
+    ids, data = pc.parse_prime_csvs('./PPDD/prime_csv', multiplier=multiplier, limit=1000)
     out_path = './out_csv/'
 
     for idx in range(len(ids)):

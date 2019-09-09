@@ -1,6 +1,6 @@
 import numpy as np
 import parse_csvs as pc
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from importlib import reload
 import evaluate_prediction as ep
 from collections import Counter
@@ -10,6 +10,7 @@ reload(ep)
 multiplier = 12
 cont_length_default = multiplier * 10
 window_size_default = multiplier * 8
+
 
 def get_best_translation(prime_window, fixed_window):
     # based on the evaluate_tec method from
